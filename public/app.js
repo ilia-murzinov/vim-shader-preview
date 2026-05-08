@@ -12,6 +12,7 @@ void main() {
 `;
 
 const KEY_SERVER = "s";
+const KEY_LOCAL = "l";
 
 /**
  * Drawing buffer width ÷ height. Kept constant while the canvas is letterboxed in the stage
@@ -127,12 +128,20 @@ const logEl = document.getElementById("log");
 const select = document.getElementById("shaderSelect");
 const watchRootEl = document.getElementById("watchRoot");
 const statusEl = document.getElementById("status");
+const pickFolderBtn = document.getElementById("pickFolderBtn");
 
 const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
 if (!gl) {
   logEl.textContent = "WebGL2 is not available in this browser.";
   throw new Error("no webgl2");
 }
+
+/** @type {FileSystemDirectoryHandle|null} */
+let localDirHandle = null;
+/** Paths → handle under chosen folder (/-separated keys) */
+const localHandles = new Map();
+/** @type Map<string, number> */
+const localMTimes = new Map();
 
 /** Server-relative paths only (REST + WebSocket refresh this). */
 let files = [];
@@ -216,6 +225,42 @@ async function fetchServerText(relPath) {
   return r.text();
 }
 
+async function readLocalText(relPath) {
+  const h = localHandles.get(relPath);
+  if (!h) throw new Error(`missing local file handle: ${relPath}`);
+  const f = await h.getFile();
+  return f.text();
+}
+
+function pathListForRealm(realm) {
+  return realm === KEY_LOCAL ? [...localHandles.keys()] : [...files];
+}
+
+async function fetchText(realm, relativePath) {
+  if (realm === KEY_LOCAL) {
+    return readLocalText(relativePath);
+  }
+  return fetchServerText(relativePath);
+}
+
+async function syncLocalMtForActive(realm, relPath, pathListArr) {
+  if (realm !== KEY_LOCAL || !relPath) return;
+
+  /** @returns {Promise<void>} */
+  async function stamp(p) {
+    const h = localHandles.get(p);
+    if (!h) return;
+    const f = await h.getFile();
+    localMTimes.set(p, f.lastModified);
+  }
+
+  await stamp(relPath);
+  const rel = relatedServerPaths(relPath, pathListArr);
+  for (const p of rel) {
+    await stamp(p);
+  }
+}
+
 async function loadAndCompile() {
   disposeProgram();
   stopLoop();
@@ -223,9 +268,9 @@ async function loadAndCompile() {
 
   const key = select.value;
   const { realm, path: relPath } = parseKey(key);
-  const pathList = [...files];
+  const pathList = pathListForRealm(realm);
 
-  if (!relPath || realm !== KEY_SERVER) {
+  if (!relPath || (realm !== KEY_LOCAL && realm !== KEY_SERVER)) {
     return;
   }
 
@@ -234,7 +279,7 @@ async function loadAndCompile() {
     let fsSrc;
 
     if (relPath.endsWith(".vert")) {
-      vsSrc = await fetchServerText(relPath);
+      vsSrc = await fetchText(realm, relPath);
       const base = relPath.replace(/\.vert$/i, "");
       const fragCand = [`${base}.frag`, `${base}.glsl`].find((p) =>
         pathList.includes(p),
@@ -242,13 +287,13 @@ async function loadAndCompile() {
       if (!fragCand) {
         throw new Error(`No matching .frag or .glsl for ${relPath}`);
       }
-      fsSrc = await fetchServerText(fragCand);
+      fsSrc = await fetchText(realm, fragCand);
     } else {
       const vertPair = pairVertPath(relPath, pathList);
       if (vertPair) {
-        vsSrc = await fetchServerText(vertPair);
+        vsSrc = await fetchText(realm, vertPair);
       }
-      fsSrc = await fetchServerText(relPath);
+      fsSrc = await fetchText(realm, relPath);
     }
 
     fsSrc = wrapFragmentIfNeeded(fsSrc);
@@ -266,6 +311,7 @@ async function loadAndCompile() {
 
     resize();
     startLoop();
+    await syncLocalMtForActive(realm, relPath, pathList);
   } catch (e) {
     setLog(String(e.message || e));
   }
@@ -292,7 +338,19 @@ function buildDropdown(preserveKey) {
   const prev = preserveKey || select.value;
   select.innerHTML = "";
 
-  addOptGroup("Shaders (live reload)", KEY_SERVER, [...files].sort());
+  addOptGroup(
+    "Project shaders (live reload)",
+    KEY_SERVER,
+    [...files].sort(),
+  );
+
+  addOptGroup(
+    localDirHandle && localDirHandle.name
+      ? `Loaded: ${localDirHandle.name}`
+      : "Chosen folder",
+    KEY_LOCAL,
+    [...localHandles.keys()].sort(),
+  );
 
   /** Pick next selection */
   const optionValues = [...select.options].map((o) => o.value);
@@ -301,18 +359,20 @@ function buildDropdown(preserveKey) {
       ? prev
       : null;
 
-  function firstChoice(listIterable) {
+  function firstChoice(realm, listIterable) {
     const sorted = [...listIterable].sort();
     const fragFirst = sorted.find(isFragmentish);
-    if (fragFirst) return makeKey(KEY_SERVER, fragFirst);
+    if (fragFirst) return makeKey(realm, fragFirst);
     const vertOnly = sorted.find((x) => x.endsWith(".vert"));
-    if (vertOnly) return makeKey(KEY_SERVER, vertOnly);
-    if (sorted.length > 0) return makeKey(KEY_SERVER, sorted[0]);
+    if (vertOnly) return makeKey(realm, vertOnly);
+    if (sorted.length > 0) return makeKey(realm, sorted[0]);
     return "";
   }
 
   if (!next) {
-    if (files.length > 0) next = firstChoice(files);
+    if (files.length > 0) next = firstChoice(KEY_SERVER, files);
+    else if (localHandles.size > 0)
+      next = firstChoice(KEY_LOCAL, [...localHandles.keys()]);
   }
 
   if (next && optionValues.includes(next)) {
@@ -320,6 +380,53 @@ function buildDropdown(preserveKey) {
   } else if (select.options.length > 0) {
     select.selectedIndex = 0;
   }
+}
+
+if (pickFolderBtn) {
+  if (typeof window.showDirectoryPicker === "function") {
+    pickFolderBtn.hidden = false;
+  }
+  pickFolderBtn.addEventListener("click", async () => {
+  if (typeof window.showDirectoryPicker !== "function") return;
+  try {
+    const dir = await window.showDirectoryPicker({ mode: "read" });
+    localDirHandle = dir;
+    localHandles.clear();
+    localMTimes.clear();
+
+    /** @type {Map<string, FileSystemFileHandle>} */
+    const m = new Map();
+
+    async function walk(handle, baseRel) {
+      for await (const [name, h] of handle.entries()) {
+        if (name.startsWith(".")) continue;
+        const rel =
+          baseRel === "" ? name : `${baseRel}/${name}`.replaceAll("\\", "/");
+        if (h.kind === "directory") await walk(h, rel);
+        else if (h.kind === "file") {
+          const low = name.toLowerCase();
+          if (/\.(?:glsl|frag|vert)$/.test(low)) m.set(rel, h);
+        }
+      }
+    }
+
+    await walk(dir, "");
+    for (const [k, v] of m) localHandles.set(k, v);
+
+    const prevRealm = parseKey(select.value).realm;
+    const prefer = prevRealm === KEY_LOCAL ? select.value : null;
+    buildDropdown(prefer);
+    await loadAndCompile();
+    statusEl.textContent = `${localHandles.size} from folder`;
+    setTimeout(() => {
+      statusEl.textContent = "Watching";
+      statusEl.classList.add("live");
+    }, 2600);
+  } catch (e) {
+    if (/** @type {DOMException|undefined} */ (e)?.name === "AbortError") return;
+    setLog(`Load folder…: ${e?.message ?? e}`);
+  }
+  });
 }
 
 async function bootstrap() {
@@ -352,7 +459,7 @@ async function bootstrap() {
 
   if (select.options.length === 0) {
     setLog(
-      "No shader files yet. Add .frag/.glsl/.vert under the watched folder.",
+      "No shader files yet. Add .frag/.glsl/.vert under the watched folder — or click Load folder… (Chrome / Edge).",
     );
     return;
   }
@@ -431,7 +538,7 @@ function connectWs() {
     if (msg?.type !== "fs" || !Array.isArray(msg.files)) return;
 
     const before = select.value;
-    const { path: beforeRel } = parseKey(before);
+    const { realm: beforeRealm, path: beforeRel } = parseKey(before);
 
     files = msg.files;
 
@@ -443,7 +550,7 @@ function connectWs() {
       return;
     }
 
-    if (!beforeRel || typeof msg.path !== "string") {
+    if (beforeRealm !== KEY_SERVER || !beforeRel || typeof msg.path !== "string") {
       return;
     }
 
@@ -466,6 +573,36 @@ function connectWs() {
     statusEl.classList.add("live");
   };
 }
+
+setInterval(async () => {
+  const { realm, path: relPath } = parseKey(select.value);
+  if (realm !== KEY_LOCAL || !relPath) return;
+
+  const pathListArr = [...localHandles.keys()];
+  let dirty = false;
+
+  /** @returns {Promise<void>} */
+  async function checkTouch(p) {
+    const h = localHandles.get(p);
+    if (!h) return;
+    const file = await h.getFile();
+    const prev = localMTimes.get(p);
+    const cur = file.lastModified;
+    if (prev === undefined || cur !== prev) {
+      localMTimes.set(p, cur);
+      dirty = true;
+    }
+  }
+
+  await checkTouch(relPath);
+  for (const p of relatedServerPaths(relPath, pathListArr)) {
+    await checkTouch(p);
+  }
+
+  if (dirty) {
+    await loadAndCompile();
+  }
+}, 500);
 
 bootstrap();
 connectWs();

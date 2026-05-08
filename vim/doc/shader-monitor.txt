@@ -7,7 +7,7 @@ Author integration for the standalone tool in this repository.
 
 OVERVIEW ~
 
-Starts `node server.mjs` in the shader-monitor checkout as a background |job|.
+Starts `node server.mjs` in the repository checkout as a background |job|.
 The server watches shaders on disk while the bundled web UI hot-reloads in the
 browser (default URL http://127.0.0.1:3847/ ).
 
@@ -17,18 +17,25 @@ INSTALLATION ~
 
 Use the vim/ subdirectory as your runtime-path root.
 
-  Vim-Plug ~/.vim/vimrc
+  vim-plug (https://github.com/junegunn/vim-plug) ::
 
-    Plug '~/projects/shader-monitor', {'rtp': 'vim'}
+    call plug#begin()
+    Plug 'ilia-murzinov/vim-shader-preview', { 'rtp': 'vim' }
+    call plug#end()
 
-  Native pack layout
+  After |:PlugInstall|, run `npm install` once in the plugin checkout root
+  (the directory that contains `server.mjs`, e.g. under
+  `plugged/vim-shader-preview/`).
 
-    ~/.local/share/nvim/site/pack/shader-monitor/start/sm
-              -> symlink to …/shader-monitor/vim/
+  Native pack: add a `start` package whose path is the `vim/` directory of
+  the cloned repo, or symlink `vim/` into
+  `pack/…/start/<name>/`.
 
-  Then install help tags::
+  Help tags::
 
-    :helptags ~/projects/shader-monitor/vim/doc
+    :helptags ALL
+
+  or |:helptags| the `vim/doc` directory under your clone.
 
 
 ==============================================================================

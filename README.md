@@ -9,12 +9,13 @@ The **drawing buffer keeps a fixed aspect ratio** (default **1:1**, like a 500×
 ## Quick start
 
 ```bash
-cd ~/projects/shader-monitor
+git clone https://github.com/ilia-murzinov/vim-shader-preview.git
+cd vim-shader-preview
 npm install
 npm start
 ```
 
-Open [http://127.0.0.1:3847/](http://127.0.0.1:3847/). By default the server watches `./shaders`, which ships several example `.frag` files — open the **Shader** dropdown to switch between them (live reload on save).
+Open [http://127.0.0.1:3847/](http://127.0.0.1:3847/). By default the server watches `./shaders`, which ships several example `.frag` files — open the **Shader** dropdown to switch between them (live reload on save). **Load folder…** (Chromium / Edge) adds a second group of shaders from any directory on disk via the browser folder picker, without restarting the server.
 
 ## Watch another directory
 
@@ -34,22 +35,34 @@ node server.mjs /path/to/your/shaders --port 5000
 - `GET /api/shader?path=relative/path.frag` — raw shader source
 - WebSocket — same host/port; messages `{ type: "fs", event, path, files }` on changes
 
-## Vim (Markdown Preview–style)
+## Vim plugin ([vim-plug](https://github.com/junegunn/vim-plug))
 
-Add the `vim/` folder to `runtimepath` (see `vim/doc/shader-monitor.txt`), run `npm install` once in the repo, then from a saved shader buffer:
+The web UI and `node server.mjs` live in this repo; Vim load only the `vim/` subtree via **`rtp`**:
 
-| Command | Role (like typical Markdown preview plugins) |
-|--------|-----------------------------------------------|
-| `:ShaderPreview` | Watch **this buffer’s directory** (`%:p:h`), start the server if needed, open the browser when `g:shader_monitor_auto_open` is on. If the job already watches that folder, only re-open the tab when `g:shader_monitor_preview_reopen_browser` is on. |
+```vim
+call plug#begin()
+Plug 'ilia-murzinov/vim-shader-preview', { 'rtp': 'vim' }
+call plug#end()
+```
+
+Then:
+
+1. `:PlugInstall`
+2. In the plugin root (e.g. Neovim: `stdpath('data') .. '/plugged/vim-shader-preview'`, Vim: `~/.vim/plugged/vim-shader-preview`), run **`npm install`** once so `node` can start `server.mjs`.
+3. (Optional) `:helptags ALL` or `:helptags <path-to>/vim-shader-preview/vim/doc` for `:help shader-monitor`.
+
+### Commands (Markdown Preview–style)
+
+From a **saved** `.frag` / `.glsl` / `.vert` buffer:
+
+| Command | Role |
+|--------|------|
+| `:ShaderPreview` | Watch **this buffer’s directory** (`%:p:h`), start the server if needed, open the browser when `g:shader_monitor_auto_open` is on. |
 | `:ShaderPreviewStop` | Stop the background `node` job. |
 | `:ShaderPreviewToggle` | Stop if running, otherwise `:ShaderPreview`. |
 
 `<Plug>(ShaderPreview)`, `<Plug>(ShaderPreviewStop)`, `<Plug>(ShaderPreviewToggle)` are provided; map them yourself, or set `let g:shader_monitor_preview_default_mappings = 1` for `<Leader>sv` / `<Leader>sV` / `<Leader>st`.
 
-By default the UI opens in a **new browser window** (`g:shader_monitor_open_new_window = 1`, macOS: `open -n`). Override with `g:shader_monitor_browser_cmd` using `%URL%` if you need a specific app or flags (see `vim/doc/shader-monitor.txt`).
+By default the UI opens in a **new browser window** (`g:shader_monitor_open_new_window = 1`, macOS: `open -n`). Override with `g:shader_monitor_browser_cmd` using `%URL%` if you need a specific app or flags (see `:help shader-monitor.txt` after helptags).
 
-Lower-level commands (`:ShaderMonitorStart` with an explicit path, etc.) stay available for scripting.
-
-```vim
-Plug '~/projects/shader-monitor', {'rtp': 'vim'}
-```
+Lower-level commands (`:ShaderMonitorStart` with an explicit path, etc.) are documented in the help file.
