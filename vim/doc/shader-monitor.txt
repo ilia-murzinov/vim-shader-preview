@@ -1,0 +1,149 @@
+*shader-monitor.txt*	Preview GLSL with shader-monitor inside Vim
+
+
+Author integration for the standalone tool in this repository.
+
+==============================================================================
+
+OVERVIEW ~
+
+Starts `node server.mjs` in the shader-monitor checkout as a background |job|.
+The server watches shaders on disk while the bundled web UI hot-reloads in the
+browser (default URL http://127.0.0.1:3847/ ).
+
+==============================================================================
+
+INSTALLATION ~
+
+Use the vim/ subdirectory as your runtime-path root.
+
+  Vim-Plug ~/.vim/vimrc
+
+    Plug '~/projects/shader-monitor', {'rtp': 'vim'}
+
+  Native pack layout
+
+    ~/.local/share/nvim/site/pack/shader-monitor/start/sm
+              -> symlink to …/shader-monitor/vim/
+
+  Then install help tags::
+
+    :helptags ~/projects/shader-monitor/vim/doc
+
+
+==============================================================================
+
+MARKDOWN-PREVIEW STYLE ~
+
+If you use |:MarkdownPreview|-style flows in other plugins, the trio below
+mirrors that pattern for GLSL (compare markdown-preview.nvim: before the
+Node job is stopped, the editor notifies the server — like `close_all_pages`
+there — so connected browsers can run `window.close()`. Some browsers block
+that for tabs opened via an external `open` / `xdg-open` command.)
+
+*:ShaderPreview*
+	Starts watching the **current buffer directory** (`%:p:h`), spawns the
+	server if needed, and opens the UI (when |g:shader_monitor_auto_open| is
+	on). If the server already watches that same directory, only the browser
+	is opened again when |g:shader_monitor_preview_reopen_browser| is on.
+
+*:ShaderPreviewStop*
+	Same as |:ShaderMonitorStop|: stops the preview job. When
+	|g:shader_monitor_close_browser_on_stop| is on (default), runs
+	`POST /api/close-pages` on the preview origin first (requires `curl`).
+
+*:ShaderPreviewToggle*
+	Stops the server if it is running; otherwise runs |:ShaderPreview|.
+
+Maps (define your own — these are the plugs)::
+
+	nnoremap <silent> <leader>sv <Plug>(ShaderPreview)
+	nnoremap <silent> <leader>sV <Plug>(ShaderPreviewStop)
+	nnoremap <silent> <leader>st <Plug>(ShaderPreviewToggle)
+
+	Set |g:shader_monitor_preview_default_mappings| to `1` for the same maps
+	on `<Leader>` (`sv` / `sV` / `st`).
+
+==============================================================================
+
+LEGACY COMMANDS ~
+							*:ShaderMonitorStart*
+:ShaderMonitorStart [{path}]
+	Starts watching {path}.
+
+	Resolution order::
+		1. {path} argument
+		2. |g:shader_monitor_watch_dir|
+		3. `shaders/` under the shader-monitor checkout (created if needed)
+
+							*:ShaderMonitorStop*
+:ShaderMonitorStop
+
+							*:ShaderMonitorOpen*
+:ShaderMonitorOpen
+
+							*:ShaderMonitorRestart*
+:ShaderMonitorRestart [{path}]
+
+							*:ShaderMonitorStatus*
+:ShaderMonitorStatus
+
+
+==============================================================================
+
+SETTINGS ~
+
+|g:shader_monitor_port|
+|g:shader_monitor_host|
+|g:shader_monitor_auto_open|
+|g:shader_monitor_stop_on_leave|
+|g:shader_monitor_watch_dir|
+|g:shader_monitor_project_root|
+|g:shader_monitor_node_executable|
+|g:shader_monitor_preview_reopen_browser|
+|g:shader_monitor_preview_default_mappings|
+|g:shader_monitor_open_new_window|
+|g:shader_monitor_browser_cmd|
+|g:shader_monitor_close_browser_on_stop|
+
+Browser opening is handled by |shader_monitor#browser_open()| (|:ShaderMonitorOpen|
+and preview flows when |g:shader_monitor_auto_open| or reopen is on).
+
+					    *g:shader_monitor_open_new_window*
+`g:shader_monitor_open_new_window`
+	Default `1`. When set, tries to open the UI in a **new browser window**
+	instead of reusing the frontmost window: on macOS uses `open -n` (new
+	app instance; Safari/Chrome each follow their own rules). On Linux,
+	tries Chrome/Chromium/Firefox with `--new-window` / `-new-window`, then
+	falls back to `xdg-open`. Set to `0` for the previous “single `open` /
+	xdg-open” behaviour.
+
+					    *g:shader_monitor_browser_cmd*
+`g:shader_monitor_browser_cmd`
+	When non-empty, this shell command is run instead of the defaults. Use
+	the literal `%URL%` where the URL should go (it is replaced with a
+	shellescaped `http://…/`). Example: >
+		let g:shader_monitor_browser_cmd =
+		      \ 'open -na "Google Chrome" --args --new-window %URL%'
+<
+
+					    *g:shader_monitor_close_browser_on_stop*
+`g:shader_monitor_close_browser_on_stop`
+	Default `1`. When stopping the preview, the plugin sends
+	`POST http://{host}:{port}/api/close-pages` before |jobstop()|, so the
+	server can tell open UI tabs to close (WebSocket message). Set to `0`
+	to skip that step. Requires `curl` in `$PATH` for the HTTP request.
+
+==============================================================================
+
+CHANGELOG ~
+
+2026-05-09  Added plugin scaffolding.
+
+2026-05-10  :ShaderPreview / :ShaderPreviewToggle (MarkdownPreview-style).
+
+2026-05-10  `g:shader_monitor_open_new_window`, `g:shader_monitor_browser_cmd`;
+	try new browser window on macOS (`open -n`) and Linux.
+
+2026-05-10  `POST /api/close-pages` + `g:shader_monitor_close_browser_on_stop`
+	(markdown-preview.nvim-style notify-before-jobstop).

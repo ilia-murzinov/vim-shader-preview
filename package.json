@@ -1,0 +1,16 @@
+{
+  "name": "shader-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Watch a directory of GLSL shaders and render them in the browser",
+  "scripts": {
+    "start": "node server.mjs",
+    "watch": "node server.mjs"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "express": "^5.1.0",
+    "ws": "^8.18.2"
+  }
+}

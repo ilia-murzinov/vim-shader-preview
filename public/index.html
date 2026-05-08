@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Shader monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="controls">
+        <label class="picker">
+          <span class="label">Shader</span>
+          <select id="shaderSelect" aria-label="Shader file"></select>
+        </label>
+        <span id="watchRoot" class="meta" title="Watched directory"></span>
+        <span id="status" class="status" aria-live="polite"></span>
+      </div>
+    </header>
+    <main>
+      <div class="stage" id="stage">
+        <div class="stageInner">
+          <canvas id="c" width="1" height="1"></canvas>
+        </div>
+      </div>
+      <pre id="log" class="log" aria-label="Shader compile log"></pre>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
